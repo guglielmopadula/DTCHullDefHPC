@@ -62,12 +62,18 @@ nsub="$(sed -n 's/^ *numberOfSubdomains *\([0-9]*\);.*/\1/p' "$base/system/decom
     "config.sh has NPROCS=$NPROCS; set them equal or every sample fails"
 
 # --- Python ------------------------------------------------------------------
-if [ ! -x "$PIPE_HOME/venv/bin/python" ]; then
+# Leonardo's python module also loads py-pip, which puts its own pip on
+# PYTHONPATH; with that set, the venv's pip imports half of itself from there
+# and fails (ImportError: cannot import name 'cli').  So the venv is built and
+# filled with PYTHONPATH unset, and it is (re)built whenever the packages do not
+# import, not only when it is missing (a failed attempt leaves a broken one).
+venv_py() { env -u PYTHONPATH PYTHONNOUSERSITE=1 "$PIPE_HOME/venv/bin/python" "$@"; }
+if ! venv_py -c "import numpy, scipy, meshio" 2>/dev/null; then
     module purge
     [ -n "$PYTHON_MODULE" ] && module load $PYTHON_MODULE
-    python3 -m venv "$PIPE_HOME/venv"
-    "$PIPE_HOME/venv/bin/pip" install -q --upgrade pip
-    "$PIPE_HOME/venv/bin/pip" install -q numpy scipy meshio
+    env -u PYTHONPATH python3 -m venv --clear "$PIPE_HOME/venv"
+    venv_py -m pip install -q --upgrade pip
+    venv_py -m pip install -q numpy scipy meshio
 fi
 load_python
 "$PY" -c "import numpy, scipy, meshio; print('python ok:', numpy.__version__, scipy.__version__, meshio.__version__)"

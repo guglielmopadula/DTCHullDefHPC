@@ -11,7 +11,10 @@ load_python() {
     module purge
     [ -n "$PYTHON_MODULE" ] && module load $PYTHON_MODULE
     PY="$PIPE_HOME/venv/bin/python"
-    export PYTHONPATH="$PIPE_HOME/code${PYTHONPATH:+:$PYTHONPATH}"
+    # only our code: the module's PYTHONPATH (py-pip and others) would shadow
+    # the venv's packages
+    export PYTHONPATH="$PIPE_HOME/code"
+    export PYTHONNOUSERSITE=1
     [ -x "$PY" ] || { echo "ERROR: $PY missing, run setup.sh first" >&2; return 1; }
 }
 
