@@ -1,5 +1,5 @@
 #!/bin/bash
-# One array task = one FFD sample: deform the hull, mesh, solve.
+# One array task = one FFD sample: deform the hull, morph the base mesh, solve.
 # Submitted by submit.sh, which passes all #SBATCH options on the command line.
 #
 # Output folder $RUN_ROOT/runs/sample_XXX:
@@ -7,6 +7,7 @@
 #   ffd_weights/weights_i.npy  FFD weights (columns follow mask_ffd.npy)
 #   mask_ffd.npy               free-component mask, (nx, ny, nz, 3)
 #   surface_check.json         inverted triangles, volume defect, max displacement
+#   mesh_morph.json            mesh points moved, max displacement of the volume mesh
 #   force.dat                  copy of postProcessing/forces/0/force.dat
 #   STATUS                     RUNNING | DONE | FAILED:<step> | SKIPPED_FOLDED
 #   log.*                      logs of the Python steps
@@ -34,8 +35,18 @@ trap 'echo "FAILED:$step" > "$RUN/STATUS"; echo "sample $id FAILED at step: $ste
 echo RUNNING > STATUS
 echo "sample $id on $(hostname), job ${SLURM_ARRAY_JOB_ID}_${i}, $(date)"
 
+# the undeformed mesh, made once by mesh_base.slurm (submit.sh makes the
+# array wait for it)
+step="base_mesh"
+BASE_MESH="$RUN_ROOT/base_mesh/DTCHull/constant/polyMesh"
+if [ "$(cat "$RUN_ROOT/base_mesh/STATUS" 2>/dev/null)" != "DONE" ]; then
+    echo "ERROR: no finished base mesh in $RUN_ROOT/base_mesh (submit with submit.sh)" >&2
+    false
+fi
+
 ln -s "$PIPE_HOME/DTCHull_bak" DTCHull_bak          # undeformed hull, read-only
 cp -r "$PIPE_HOME/DTCHull_bak" DTCHull
+cp -r "$BASE_MESH" DTCHull/constant/polyMesh
 chmod -R u+w DTCHull
 
 # --- 1. deform the hull --------------------------------------------------------
@@ -55,12 +66,17 @@ if [ "$SKIP_FOLDED" = "1" ] && grep -q '"folded": true' surface_check.json; then
     exit 0
 fi
 
-# --- 2. mesh and solve ------------------------------------------------------------
+# --- 2. morph the base mesh with the same FFD ---------------------------------
+step="morph_mesh"
+"$PY" "$PIPE_HOME/code/morph_mesh.py" "$i" > log.morph_mesh 2>&1
+cat log.morph_mesh
+
+# --- 3. solve -------------------------------------------------------------------
 step="openfoam_env"
 load_openfoam
 step="openfoam"
 # runs inside a subshell so a failure inside reports the OpenFOAM step itself
-if ! bash "$PIPE_HOME/run_case.sh" "$RUN/DTCHull" "$NPROCS" "$END_TIME" "$KEEP_FIELDS" "$WRITE_INTERVAL"; then
+if ! bash "$PIPE_HOME/run_case.sh" solve "$RUN/DTCHull" "$NPROCS" "$END_TIME" "$KEEP_FIELDS" "$WRITE_INTERVAL"; then
     step="openfoam:$(cat "$RUN/DTCHull/LAST_STEP" 2>/dev/null || echo unknown)"
     false
 fi

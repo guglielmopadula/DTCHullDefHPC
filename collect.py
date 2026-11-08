@@ -14,7 +14,7 @@ ffd_weights/weights_<i>.npy.  Written to this folder (or --out):
 
 Usage (on a login node):
     venv/bin/python collect.py                 # last 500 iterations, RUN_ROOT from config.sh
-    venv/bin/python collect.py --n-avg 500 --root $SCRATCH/dtc_ffd --out results_dir
+    venv/bin/python collect.py --n-avg 500 --root $SCRATCH/dtc_ffd_morph --out results_dir
 """
 import argparse
 import csv
@@ -51,7 +51,7 @@ def load_force(path):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--root", default=from_config("RUN_ROOT", os.path.expandvars("$SCRATCH/dtc_ffd")),
+    ap.add_argument("--root", default=from_config("RUN_ROOT", os.path.expandvars("$SCRATCH/dtc_ffd_morph")),
                     help="RUN_ROOT of the pipeline (default: from config.sh)")
     ap.add_argument("--n-avg", type=int, default=500, help="iterations averaged (default 500)")
     ap.add_argument("--out", default=HERE, help="output folder (default: this folder)")

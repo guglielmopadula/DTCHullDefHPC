@@ -75,15 +75,33 @@ class FFD:
     coordinates and initial_deform is added to it, so the displacements are
     expressed in box lengths.
 
-    Points whose local coordinates fall outside the unit cube are returned
-    unchanged (the Bernstein basis is only a partition of unity inside the
-    box; extrapolating it would send the far field to infinity).
+    Points outside the box are not extrapolated (the Bernstein basis is only a
+    partition of unity inside it; extrapolating would send the far field to
+    infinity).  With taper = 0 they are left unchanged.  With taper > 0 (metres)
+    a point at distance r outside the box gets the displacement of its nearest
+    point on the box surface, scaled by the C1 ramp h(r / taper),
+    h(s) = (1 - s)^2 (1 + 2 s), which is 1 on the box and 0 beyond taper.  This
+    matters wherever the displacement does not vanish on the box surface (free
+    control points on the outer layer): without it the deformation jumps there,
+    which an STL with no vertices on the far side tolerates but a volume mesh
+    does not.  Inside the box both variants are the plain FFD, and the map
+    stays linear in the control points.
+
+    mirror_y (optional) is a symmetry plane y = mirror_y, normally the box face
+    on the ship's centreplane: a point beyond it gets the mirror image of the
+    displacement of its reflection, so a full-hull surface deforms
+    symmetrically (needs zero y-displacement on that face, which the frozen
+    y-components there guarantee).  The half-domain volume mesh has no points
+    beyond the plane, so it is unaffected.
 
     `adjust_volume` corrects the free weights so that the deformation leaves
     the volume enclosed by the surface unchanged.
     """
 
-    def __init__(self, box_origin, box_length, n_control, initial_deform=0):
+    def __init__(self, box_origin, box_length, n_control, initial_deform=0, taper=0.0,
+                 mirror_y=None):
+        self.taper = float(taper)
+        self.mirror_y = None if mirror_y is None else float(mirror_y)
         self.box_origin = np.array(box_origin, dtype=np.float64)
         self.box_length = np.array(box_length, dtype=np.float64)
         self.n_control = np.array(n_control, dtype=np.int64)
@@ -132,6 +150,32 @@ class FFD:
         local = self.mesh_to_local_space(mesh)
         return np.all((local >= -tol) & (local <= 1.0 + tol), axis=1)
 
+    def support(self, mesh, tol=1e-08):
+        """Points the deformation reaches, in global space.
+
+        Returns (idx, u, h, flip): their indices, the local coordinates of the
+        point (reflected if beyond mirror_y) clamped to the unit cube, the
+        blending weight (1 inside the box, the taper ramp outside) and whether
+        it was reflected.  The displacement of point idx[n] is
+        h[n] * (apply_to_mesh(u) - u)[n] * box_length, with the y-component
+        negated where flip[n].
+        """
+        mesh = np.array(mesh, dtype=np.float64)
+        flip = np.zeros(len(mesh), dtype=bool)
+        if self.mirror_y is not None:
+            flip = mesh[:, 1] > self.mirror_y
+            mesh[flip, 1] = 2 * self.mirror_y - mesh[flip, 1]
+        local = self.mesh_to_local_space(mesh)
+        inside = np.all((local >= -tol) & (local <= 1.0 + tol), axis=1)
+        clamped = np.clip(local, 0.0, 1.0)
+        h = inside.astype(np.float64)
+        if self.taper > 0:
+            r = np.linalg.norm((local - clamped) * self.box_length, axis=1)
+            s = np.clip(r / self.taper, 0.0, 1.0)
+            h = np.where(inside, 1.0, (1 - s) ** 2 * (1 + 2 * s))
+        idx = np.nonzero(h > 0)[0]
+        return idx, clamped[idx], h[idx], flip[idx]
+
     # -- deformation --------------------------------------------------------
 
     def apply_to_point(self, x):
@@ -155,14 +199,14 @@ class FFD:
         return out
 
     def ffd(self, M):
-        """Deform the points of M that fall inside the box, leave the rest."""
+        """Deform the points of M inside the box (and in the taper zone), leave the rest."""
         M = np.asarray(M, dtype=np.float64)
         out = M.copy()
-        mask = self.inside_box(M)
-        if not np.any(mask):
-            return out
-        local = self.mesh_to_local_space(M[mask])
-        out[mask] = self.mesh_to_global_space(self.apply_to_mesh(local))
+        idx, u, h, flip = self.support(M)
+        if len(idx):
+            d = h[:, None] * (self.apply_to_mesh(u) - u) * self.box_length
+            d[flip, 1] *= -1
+            out[idx] += d
         return out
 
     # -- volume-preserving correction ---------------------------------------
@@ -191,8 +235,8 @@ class FFD:
                 by default the ones the caller left non-zero.
         shares: how the defect is split between x, y and z; must sum to one.
 
-        Vertices outside the box do not move and contribute no sensitivity, so
-        only the interior ones enter the projection.  The control points are
+        Vertices the deformation does not reach contribute no sensitivity, so
+        only those in support() enter the projection, with their taper weight.  The control points are
         modified in place; a dictionary of diagnostics is returned.
         """
         M = np.asarray(M, dtype=np.float64)
@@ -206,15 +250,13 @@ class FFD:
         if not free.any():
             raise ValueError("no free components: every weight is zero")
 
-        inside = self.inside_box(M)
-        if not inside.any():
+        idx, u, h, flip = self.support(M)
+        if not len(idx):
             raise ValueError("no surface vertex lies inside the lattice box")
-        local = self.mesh_to_local_space(M[inside])
-        basis = self.bernestein_mesh(local)          # (nx+1, ny+1, nz+1, N_in)
+        basis = self.bernestein_mesh(u) * h          # (nx+1, ny+1, nz+1, N_in)
 
         v_ref = surface_volume(M, tris)
-        deformed = M.copy()
-        deformed[inside] = self.mesh_to_global_space(self.apply_to_mesh(local))
+        deformed = self.ffd(M)
         defect = v_ref - surface_volume(deformed, tris)
         initial = abs(defect) / abs(v_ref)
 
@@ -224,7 +266,8 @@ class FFD:
                 continue
             # dV/dP[i,j,k,d] = sum_p B_ijk(u_p) * (dV/dp_p)[d] * box_length[d],
             # the box length entering through the local-to-global map.
-            grad = surface_volume_gradient(deformed, tris)[inside]
+            grad = surface_volume_gradient(deformed, tris)[idx]
+            grad[flip, 1] *= -1          # reflected points move with -dP[..., 1]
             alpha = np.einsum("ijkp,p->ijk", basis, grad[:, d]) * self.box_length[d]
             alpha = alpha * free[..., d]
 
@@ -234,7 +277,7 @@ class FFD:
                     f"no free component affects the volume in direction {d}")
             self.control_points[..., d] += alpha * (defect * share / denom)
 
-            deformed[inside] = self.mesh_to_global_space(self.apply_to_mesh(local))
+            deformed = self.ffd(M)
             if verbose:
                 res = abs(v_ref - surface_volume(deformed, tris)) / abs(v_ref)
                 print(f"  after {'xyz'[d]}: relative volume defect {res:.3e}")
@@ -245,7 +288,7 @@ class FFD:
             "relative_defect_final":
                 abs(v_ref - surface_volume(deformed, tris)) / abs(v_ref),
             "n_free": int(free.sum()),
-            "n_inside": int(inside.sum()),
+            "n_inside": int(len(idx)),
             "delta_norm": float(np.linalg.norm(delta)),
             "delta_max": float(np.abs(delta).max()),
         }
@@ -254,7 +297,9 @@ class FFD_volume_fixer:
     """Volume-preserving correction of a weight array, reusing one loaded surface."""
 
     def __init__(self, stl_in=STL_IN, box_origin=(5.80, -0.10, -0.05),
-                 box_length=(0.50, 0.10, 0.33)):
+                 box_length=(0.50, 0.10, 0.33), taper=0.0, mirror_y=None):
+        self.taper = float(taper)
+        self.mirror_y = mirror_y
         self.mesh = read_surface(stl_in)
         self.points = self.mesh.points
         self.tris = np.asarray(self.mesh.cells_dict["triangle"], dtype=np.int64)
@@ -265,7 +310,8 @@ class FFD_volume_fixer:
         tmp = np.asarray(tmp, dtype=np.float64)
         n_control = [s - 1 for s in tmp.shape[1:]]
         ffd = FFD(self.box_origin, self.box_length, n_control,
-                  np.moveaxis(tmp, 0, -1))
+                  np.moveaxis(tmp, 0, -1), taper=self.taper,
+                  mirror_y=self.mirror_y)
         info = ffd.adjust_volume(self.points, self.tris,
                                  free=np.moveaxis(mask, 0, -1),
                                  shares=shares, verbose=verbose)

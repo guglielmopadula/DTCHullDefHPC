@@ -10,7 +10,8 @@ PARTITION="dcgp_usr_prod"      # CPU partition (112 cores/node); OpenFOAM is CPU
 QOS="normal"                   # normal: up to 24 h, 16 nodes per job
 NPROCS=8                       # MPI ranks; must equal numberOfSubdomains in the
                                # case's decomposeParDict (8, hierarchical (2 2 2))
-WALLTIME="24:00:00"            # per sample: serial meshing + 4000 iterations (max for QOS normal)
+WALLTIME="24:00:00"            # per sample (4000 iterations) and for the one base-mesh job
+                               # (serial meshing); max for QOS normal
 MEM="32G"                      # per job (one node); empty = Slurm default per core
 MAX_CONCURRENT=20              # array throttle: samples running at once
 
@@ -25,7 +26,9 @@ N_SAMPLES=100                  # samples FIRST_SAMPLE .. FIRST_SAMPLE+N_SAMPLES-
 # --- Storage ----------------------------------------------------------------
 # One folder per sample: $RUN_ROOT/runs/sample_XXX
 # $SCRATCH is purged for files not accessed in 40 days: copy results/ away.
-RUN_ROOT="${SCRATCH:?SCRATCH is not set}/dtc_ffd"
+# Every sample in a RUN_ROOT morphs the same base mesh ($RUN_ROOT/base_mesh);
+# a new mesh setup needs a new RUN_ROOT.  (dtc_ffd held the remeshed runs.)
+RUN_ROOT="${SCRATCH:?SCRATCH is not set}/dtc_ffd_morph"
 
 # --- Simulation -------------------------------------------------------------
 END_TIME=4000                  # LTS iterations (the shipped controlDict says 100)

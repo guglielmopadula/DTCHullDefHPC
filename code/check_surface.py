@@ -18,7 +18,7 @@ import sys
 import numpy as np
 
 from my_ffd import FFD, read_surface, surface_volume
-from mv_points import BOX_LENGTH, BOX_ORIGIN, STL_IN, STL_OUT
+from mv_points import BOX_LENGTH, BOX_ORIGIN, FFD_TAPER, MIRROR_Y, STL_IN, STL_OUT
 
 
 def normals(points, tris):
@@ -35,9 +35,11 @@ def main(seed):
     P = mesh.points
     T = np.asarray(mesh.cells_dict["triangle"], dtype=np.int64)
 
-    ffd = FFD(BOX_ORIGIN, BOX_LENGTH, [s - 1 for s in mask.shape[:3]], w)
+    ffd = FFD(BOX_ORIGIN, BOX_LENGTH, [s - 1 for s in mask.shape[:3]], w, taper=FFD_TAPER, mirror_y=MIRROR_Y)
     Q = ffd.ffd(P)
-    touched = ffd.inside_box(P)[T].any(axis=1)
+    reached = np.zeros(len(P), dtype=bool)
+    reached[ffd.support(P)[0]] = True
+    touched = reached[T].any(axis=1)
     flipped = (normals(Q, T) * normals(P, T)).sum(axis=1) < 0
     n_inv = int((flipped & touched).sum())
 

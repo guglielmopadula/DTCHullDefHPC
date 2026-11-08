@@ -53,6 +53,9 @@ def main(root, first, n, n_avg):
                 c = json.load(open(chk))
                 r.update({k: c[k] for k in ("n_inverted", "rel_defect", "rel_defect_stl",
                                             "max_displacement")})
+            mm = os.path.join(sd, "mesh_morph.json")
+            if os.path.exists(mm):
+                r["mesh_max_displacement"] = json.load(open(mm))["max_displacement"]
             wf = os.path.join(sd, "ffd_weights", f"weights_{i}.npy")
             if os.path.exists(wf):
                 shutil.copy(wf, os.path.join(res, "ffd_weights"))
@@ -68,7 +71,7 @@ def main(root, first, n, n_avg):
         rows.append(r)
 
     cols = ["seed", "status", "drag", "n_iterations", "n_avg_used", "n_inverted",
-            "rel_defect", "rel_defect_stl", "max_displacement"]
+            "rel_defect", "rel_defect_stl", "max_displacement", "mesh_max_displacement"]
     with open(os.path.join(res, "summary.csv"), "w", newline="") as f:
         wr = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         wr.writeheader(); wr.writerows(rows)

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Submit the sample array and the gather job that runs after it.
+# Submit the base mesh (once), the sample array and the gather job that runs after it.
 #     ./submit.sh            all samples from config.sh
 #     ./submit.sh 7,12,40-45 only these indices (finished samples are skipped anyway)
 set -eo pipefail
@@ -37,11 +37,34 @@ mkdir -p "$RUN_ROOT/runs" "$RUN_ROOT/logs"
 
 mem_opt=(); [ -n "$MEM" ] && mem_opt=(--mem="$MEM")
 
+# the undeformed mesh every sample morphs: made once per RUN_ROOT
+dep=()
+if [ "$(cat "$RUN_ROOT/base_mesh/STATUS" 2>/dev/null)" = "DONE" ]; then
+    echo "base mesh : $RUN_ROOT/base_mesh (done)"
+else
+    mid="$(cat "$RUN_ROOT/logs/base_mesh.jobid" 2>/dev/null || true)"
+    if [ -n "$mid" ] && squeue -h -j "$mid" 2>/dev/null | grep -q .; then
+        echo "base mesh : job $mid still queued or running, the samples wait for it"
+    else
+        mid=$(sbatch --parsable \
+            --job-name=dtc_ffd_mesh \
+            --account="$ACCOUNT" --partition="$PARTITION" --qos="$QOS" \
+            --time="$WALLTIME" --nodes=1 --ntasks=1 --cpus-per-task=1 "${mem_opt[@]}" \
+            --output="$RUN_ROOT/logs/base_mesh.%j.out" \
+            --export=ALL,PIPE_HOME="$PIPE_HOME" \
+            "$PIPE_HOME/mesh_base.slurm")
+        mid="${mid%%;*}"
+        echo "$mid" > "$RUN_ROOT/logs/base_mesh.jobid"
+        echo "base mesh : job $mid, the samples start when it succeeds"
+    fi
+    dep=(--dependency=afterok:"$mid")
+fi
+
 jid=$(sbatch --parsable \
     --job-name=dtc_ffd \
     --account="$ACCOUNT" --partition="$PARTITION" --qos="$QOS" \
     --time="$WALLTIME" --nodes=1 --ntasks="$NPROCS" --cpus-per-task=1 "${mem_opt[@]}" \
-    --array="${range}%${MAX_CONCURRENT}" \
+    --array="${range}%${MAX_CONCURRENT}" "${dep[@]}" \
     --output="$RUN_ROOT/logs/sample_%a.%A.out" \
     --export=ALL,PIPE_HOME="$PIPE_HOME" \
     "$PIPE_HOME/run_sample.slurm")

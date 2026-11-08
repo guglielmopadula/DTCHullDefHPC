@@ -3,6 +3,7 @@
 PIPE_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$PIPE_HOME/config.sh"
 
+echo "base mesh        $(cat "$RUN_ROOT/base_mesh/STATUS" 2>/dev/null || echo MISSING)"
 declare -A count; failed=()
 for ((i = FIRST_SAMPLE; i < FIRST_SAMPLE + N_SAMPLES; i++)); do
     d="$RUN_ROOT/runs/$(printf 'sample_%03d' "$i")"
@@ -16,4 +17,4 @@ if [ ${#failed[@]} -gt 0 ]; then
     [ "$1" = "-v" ] && printf '  failed %s\n' "${failed[@]}"
     echo "resubmit the failed ones with: ./submit.sh $ids"
 fi
-squeue -u "$USER" -n dtc_ffd,dtc_ffd_gather -h -o '%.18i %.10T %.10M %R' 2>/dev/null | head -25
+squeue -u "$USER" -n dtc_ffd_mesh,dtc_ffd,dtc_ffd_gather -h -o '%.18i %.10T %.10M %R' 2>/dev/null | head -25

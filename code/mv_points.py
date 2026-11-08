@@ -27,6 +27,15 @@ STL_OUT = "DTCHull/constant/triSurface/DTC-scaled.stl"
 
 BOX_ORIGIN = np.array([5.80, -0.10, -0.05])
 BOX_LENGTH = np.array([0.50, 0.10, 0.33])
+# Width (m) of the zone outside the box over which the displacement of the
+# free edge [4, 4, :] (on the box surface) is ramped to zero; see my_ffd.FFD.
+# The same value deforms the STL (mv_points, check_surface) and the volume
+# mesh (morph_mesh), so the hull patch of the mesh matches the STL.
+FFD_TAPER = 0.20
+# The STL is the full hull but the mesh only its y <= 0 half: the box face
+# y = 0 is the centreplane, and the y > 0 side of the STL gets the mirrored
+# deformation, so the deformed STL stays symmetric.
+MIRROR_Y = 0.0
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -82,17 +91,18 @@ if __name__ == "__main__":
         tmp = np.transpose(grid, (3, 0, 1, 2))
 
     if "--no-fix" not in sys.argv:
-        fixer = FFD_volume_fixer(STL_IN, BOX_ORIGIN, BOX_LENGTH)
+        fixer = FFD_volume_fixer(STL_IN, BOX_ORIGIN, BOX_LENGTH, taper=FFD_TAPER,
+                                  mirror_y=MIRROR_Y)
         tmp, info = fixer(tmp, mask)
         print(f"volume defect {info['relative_defect_initial']:.3e} -> "
               f"{info['relative_defect_final']:.1e} over {info['n_free']} free weights")
 
     ffd = FFD(BOX_ORIGIN, BOX_LENGTH, [nx - 1, ny - 1, nz - 1],
-              np.moveaxis(tmp, 0, -1))
-    n_in = int(ffd.inside_box(points).sum())
+              np.moveaxis(tmp, 0, -1), taper=FFD_TAPER, mirror_y=MIRROR_Y)
+    n_in = len(ffd.support(points)[0])
     points_def = ffd.ffd(points)
     moved = np.linalg.norm(points_def - points, axis=1)
-    print(f"{n_in} of {len(points)} surface vertices inside the lattice, "
+    print(f"{n_in} of {len(points)} surface vertices inside the lattice or its taper zone, "
           f"max displacement {moved.max():.5f}")
 
     write_surface(STL_OUT, mesh, points_def)
