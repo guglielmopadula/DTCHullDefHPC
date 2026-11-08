@@ -26,6 +26,7 @@ fi
 
 # a previous failed attempt is wiped: OpenFOAM's runApplication refuses to
 # overwrite existing logs, and a half-meshed case is not worth recovering
+[ -d "$RUN" ] && chmod -R u+w "$RUN"     # copies of the read-only DTCHull_bak
 rm -rf "$RUN"
 mkdir -p "$RUN/ffd_weights"
 cd "$RUN"
@@ -44,10 +45,11 @@ if [ "$(cat "$RUN_ROOT/base_mesh/STATUS" 2>/dev/null)" != "DONE" ]; then
     false
 fi
 
+step="copy_case"
 ln -s "$PIPE_HOME/DTCHull_bak" DTCHull_bak          # undeformed hull, read-only
 cp -r "$PIPE_HOME/DTCHull_bak" DTCHull
+chmod -R u+w DTCHull                 # cp keeps DTCHull_bak's read-only modes
 cp -r "$BASE_MESH" DTCHull/constant/polyMesh
-chmod -R u+w DTCHull
 
 # --- 1. deform the hull --------------------------------------------------------
 step="mv_points"
