@@ -31,7 +31,7 @@ N_SAMPLES=100                  # samples FIRST_SAMPLE .. FIRST_SAMPLE+N_SAMPLES-
 RUN_ROOT="${SCRATCH:?SCRATCH is not set}/dtc_ffd_morph"
 
 # --- Simulation -------------------------------------------------------------
-END_TIME=4000                  # LTS iterations (the shipped controlDict says 100)
+END_TIME=4000                  # LTS iterations (written into the case's controlDict)
 WRITE_INTERVAL=""              # empty = write fields only at END_TIME; e.g. 100 keeps
                                # every 100th iteration (~40x the disk per sample)
 KEEP_FIELDS=1                  # 1 = reconstruct and keep the final fields, 0 = forces only
@@ -45,10 +45,10 @@ WEIGHTS_FILE=""                # empty = random weights (seed = sample index);
 WEIGHTS_NO_FIX=0               # 1 = use the loaded weights without the volume fix
 
 # --- Software ---------------------------------------------------------------
-# OpenFOAM: either Leonardo's module (openfoam+ is OpenFOAM.com; v2512 in Nov 2026) ...
+# OpenFOAM: either Leonardo's module (openfoam+ is OpenFOAM.com) ...
 # An 'SHSTK and AVX512_FP16' error means the build does not match the node's CPU:
 # try the other partition, another module (module av openfoam) or FOAM_BASHRC.
-OPENFOAM_MODULES="profile/eng openfoam+"   # loaded in order; check: module av openfoam
+OPENFOAM_MODULES="profile/eng openfoam+/2106"   # loaded in order; check: module av openfoam
 # ... or your own build: set this to its etc/bashrc and the modules are skipped
 FOAM_BASHRC=""                 # e.g. "$WORK/OpenFOAM-v2506/etc/bashrc"
 

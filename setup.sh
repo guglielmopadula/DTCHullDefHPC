@@ -1,8 +1,12 @@
 #!/bin/bash
 # One-time setup, run on a Leonardo login node from inside this folder:
-#     ./setup.sh /path/to/DTCHull_bak.zip      (or an unpacked DTCHull_bak folder)
+#     ./setup.sh                               base case from $FOAM_TUTORIALS
+#     ./setup.sh /path/to/DTCHull_bak.zip      or from your own zip / folder
 #
-# - installs the base case as ./DTCHull_bak, without the generated mesh
+# - installs the base case as ./DTCHull_bak, without any generated mesh: by
+#   default the DTCHull tutorial of the OpenFOAM in OPENFOAM_MODULES /
+#   FOAM_BASHRC (multiphase/interFoam/RAS/DTCHull), with the hull STL from
+#   resources/geometry, unpacked to constant/triSurface/DTC-scaled.stl
 # - builds a Python venv with numpy, scipy and meshio
 # - runs mv_points.py for seed 0 as a smoke test
 set -eo pipefail
@@ -11,26 +15,51 @@ export PIPE_HOME
 source "$PIPE_HOME/config.sh"
 source "$PIPE_HOME/env.sh"
 
-src="${1:?usage: ./setup.sh /path/to/DTCHull_bak.zip}"
+src="${1:-}"
 base="$PIPE_HOME/DTCHull_bak"
+stl="$base/constant/triSurface/DTC-scaled.stl"
 
 # --- base case ---------------------------------------------------------------
 if [ -e "$base" ]; then
     echo "Base case already present: $base (delete it to reinstall)"
 else
     tmp="$(mktemp -d)"
-    if [ -d "$src" ]; then cp -r "$src" "$tmp/"; else unzip -q "$src" -d "$tmp"; fi
+    if [ -z "$src" ]; then
+        load_openfoam
+        tut="${FOAM_TUTORIALS:?FOAM_TUTORIALS not set by the OpenFOAM environment}"
+        case_src="$tut/multiphase/interFoam/RAS/DTCHull"
+        [ -d "$case_src" ] || { echo "ERROR: no tutorial $case_src" >&2; exit 1; }
+        cp -r "$case_src" "$tmp/DTCHull_bak"
+        mkdir -p "$tmp/DTCHull_bak/constant/triSurface"
+        if ! ls "$tmp"/DTCHull_bak/constant/triSurface/DTC-scaled.stl* >/dev/null 2>&1; then
+            geo="$tut/resources/geometry/DTC-scaled.stl.gz"
+            [ -f "$geo" ] || { echo "ERROR: hull STL not found: $geo" >&2; exit 1; }
+            cp "$geo" "$tmp/DTCHull_bak/constant/triSurface/"
+        fi
+        echo "Base case from $case_src ($WM_PROJECT_DIR)"
+    elif [ -d "$src" ]; then
+        cp -r "$src" "$tmp/"
+    else
+        unzip -q "$src" -d "$tmp"
+    fi
     found="$(find "$tmp" -maxdepth 2 -type d -name DTCHull_bak | head -1)"
     [ -n "$found" ] || { echo "ERROR: no DTCHull_bak folder in $src" >&2; exit 1; }
+    # the Python steps read the plain STL
+    gz="$found/constant/triSurface/DTC-scaled.stl.gz"
+    [ -f "$gz" ] && [ ! -f "${gz%.gz}" ] && gunzip "$gz"
+    rm -f "$gz"
     mv "$found" "$base"; rm -rf "$tmp"
-    # blockMesh / surfaceFeatureExtract regenerate these in every sample
+    # the base mesh job regenerates these
     rm -rf "$base/constant/polyMesh" "$base/constant/extendedFeatureEdgeMesh" \
            "$base"/processor* "$base/0" "$base"/log.* "$base/postProcessing" \
            "$base/.vscode" "$base/miao.foam"
     chmod -R a-w "$base"      # every sample reads the undeformed hull from here
     echo "Base case installed: $base"
 fi
-[ -f "$base/constant/triSurface/DTC-scaled.stl" ] || { echo "ERROR: hull STL missing" >&2; exit 1; }
+[ -f "$stl" ] || { echo "ERROR: hull STL missing: $stl" >&2; exit 1; }
+nsub="$(sed -n 's/^ *numberOfSubdomains *\([0-9]*\);.*/\1/p' "$base/system/decomposeParDict")"
+[ "$nsub" = "$NPROCS" ] || echo "WARNING: decomposeParDict has $nsub subdomains," \
+    "config.sh has NPROCS=$NPROCS; set them equal or every sample fails"
 
 # --- Python ------------------------------------------------------------------
 if [ ! -x "$PIPE_HOME/venv/bin/python" ]; then

@@ -36,8 +36,10 @@ $SCRATCH/dtc_ffd_morph/
 | `code/morph_mesh.py` | applies the same FFD to the volume mesh (`constant/polyMesh/points`) |
 | `code/foam_points.py` | reads and writes an OpenFOAM `points` file (ascii, binary, gzip) |
 
-The DTC OpenFOAM case (`DTCHull_bak`) is not part of the repository; `setup.sh` installs it
-from a zip or folder.
+The DTC OpenFOAM case (`DTCHull_bak`) is not part of the repository. `setup.sh` copies it
+from `$FOAM_TUTORIALS/multiphase/interFoam/RAS/DTCHull` of the OpenFOAM in `config.sh`
+(hull STL from `$FOAM_TUTORIALS/resources/geometry`), or from a zip or folder given as its
+argument (`./setup.sh /path/to/DTCHull_bak.zip`).
 
 ## Quick start
 
@@ -45,7 +47,7 @@ On a login node (`ssh <user>@login.leonardo.cineca.it`):
 
 ```bash
 git clone <this repository> leonardo_pipeline && cd leonardo_pipeline
-./setup.sh /path/to/DTCHull_bak.zip    # base case + venv (numpy, scipy, meshio) + test of sample 0
+./setup.sh                             # base case from $FOAM_TUTORIALS + venv (numpy, scipy, meshio) + test of sample 0
 nano config.sh                         # at least ACCOUNT (saldo -b)
 ./submit.sh 0                          # one sample first
 ./status.sh -v                         # progress; failed samples with their step
@@ -123,7 +125,7 @@ By hand: `python code/mv_points.py 7 --weights weights.npy [--no-fix]`.
 | `WRITE_INTERVAL` | = `END_TIME` | fields written at the end only |
 | `KEEP_FIELDS` | 1 | 0 = keep forces only |
 | `SKIP_FOLDED` | 0 | 1 = do not simulate self-intersecting hulls |
-| `OPENFOAM_MODULES` | `profile/eng openfoam+` | or `FOAM_BASHRC` for your own build |
+| `OPENFOAM_MODULES` | `profile/eng openfoam+/2106` | or `FOAM_BASHRC` for your own build |
 
 ## Results
 
