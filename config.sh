@@ -29,6 +29,8 @@ N_SAMPLES=100                  # samples FIRST_SAMPLE .. FIRST_SAMPLE+N_SAMPLES-
 # Every sample in a RUN_ROOT morphs the same base mesh ($RUN_ROOT/base_mesh);
 # a new mesh setup needs a new RUN_ROOT.  (dtc_ffd held the remeshed runs.)
 RUN_ROOT="${SCRATCH:?SCRATCH is not set}/dtc_ffd_morph"
+BASE_MESH_DIR=""               # empty = $RUN_ROOT/base_mesh; another run's base_mesh
+                               # reuses its mesh (same base case and snappyHexMeshDict)
 
 # --- Simulation -------------------------------------------------------------
 END_TIME=4000                  # LTS iterations (written into the case's controlDict)
@@ -36,9 +38,20 @@ WRITE_INTERVAL=""              # empty = write fields only at END_TIME; e.g. 100
                                # every 100th iteration (~40x the disk per sample)
 KEEP_FIELDS=1                  # 1 = reconstruct and keep the final fields, 0 = forces only
 SKIP_FOLDED=0                  # 1 = do not simulate hulls with inverted triangles
-N_AVG=500                      # iterations averaged for the drag in Y.npy (as compute_sas.py)
+N_AVG=500                      # last iterations averaged for the drag in Y.npy; summary.csv
+                               # also reports the drift between the two halves of this window
+# LTS controls of the case (PIMPLE in system/fvSolution); empty = the case's value
+# (tutorial: 10, 5, 0.5).  With the tutorial values the drag still wanders by
+# +-0.3 N after 4000 iterations; smaller values damp it (see pilot.conf).
+MAX_CO=""
+MAX_ALPHA_CO=""
+RDT_DAMPING=""                 # rDeltaTDampingCoeff
 
 # --- Weights ----------------------------------------------------------------
+FFD_SCALE=0.02                 # std of the random weights, in box lengths (truncated at
+                               # 3 std).  0.02: hull moves 2-3.5 mm; 0.05: 6-9 mm, morphed
+                               # mesh as good as the base; 0.1: 11-18 mm, some meshes reach
+                               # 85 deg non-orthogonality; 0.2: hulls fold
 WEIGHTS_FILE=""                # empty = random weights (seed = sample index);
                                # an ABSOLUTE path to a .npy of shape (N, 86):
                                # sample i uses row i (columns in mask_ffd.npy order)
@@ -53,3 +66,13 @@ OPENFOAM_MODULES="profile/eng openfoam+/2106"   # loaded in order; check: module
 FOAM_BASHRC=""                 # e.g. "$WORK/OpenFOAM-v2506/etc/bashrc"
 
 PYTHON_MODULE="python"         # check with: module av python
+
+# --- Overrides --------------------------------------------------------------
+# PIPE_CONFIG=pilot.conf ./submit.sh  (and ./status.sh) sources that file after
+# this one, so a test run changes a few values without editing this file.
+if [ -n "$PIPE_CONFIG" ]; then
+    case "$PIPE_CONFIG" in /*) ;; *) PIPE_CONFIG="$PIPE_HOME/$PIPE_CONFIG" ;; esac
+    source "$PIPE_CONFIG" || { echo "ERROR: cannot read PIPE_CONFIG=$PIPE_CONFIG" >&2; return 1 2>/dev/null || exit 1; }
+    export PIPE_CONFIG                 # absolute, for the jobs
+fi
+BASE_MESH_DIR="${BASE_MESH_DIR:-$RUN_ROOT/base_mesh}"

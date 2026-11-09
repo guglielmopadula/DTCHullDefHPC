@@ -1,5 +1,6 @@
 #!/bin/bash
-# Meshes the undeformed hull once, in $RUN_ROOT/base_mesh/DTCHull.
+# Meshes the undeformed hull once, in $BASE_MESH_DIR/DTCHull
+# (default $RUN_ROOT/base_mesh).
 # Submitted by submit.sh when the base mesh is missing; the sample array waits
 # for it (afterok) and morphs a copy of constant/polyMesh in every sample.
 #
@@ -13,7 +14,7 @@ set -eEo pipefail
 source "$PIPE_HOME/config.sh"
 source "$PIPE_HOME/env.sh"
 
-B="$RUN_ROOT/base_mesh"
+B="$BASE_MESH_DIR"
 if [ "$(cat "$B/STATUS" 2>/dev/null)" = "DONE" ]; then
     echo "base mesh already done: $B"; exit 0
 fi

@@ -3,7 +3,8 @@
 PIPE_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$PIPE_HOME/config.sh"
 
-echo "base mesh        $(cat "$RUN_ROOT/base_mesh/STATUS" 2>/dev/null || echo MISSING)"
+echo "run root         $RUN_ROOT"
+echo "base mesh        $(cat "$BASE_MESH_DIR/STATUS" 2>/dev/null || echo MISSING)"
 declare -A count; failed=()
 for ((i = FIRST_SAMPLE; i < FIRST_SAMPLE + N_SAMPLES; i++)); do
     d="$RUN_ROOT/runs/$(printf 'sample_%03d' "$i")"

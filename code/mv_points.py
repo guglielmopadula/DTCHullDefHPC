@@ -12,8 +12,11 @@ lattice box, and writes the deformed surface back out.  The mesh topology
 snappyHexMesh can be re-run on the result.
 
 Usage:
-    python ffd_stl.py <seed>
-    python ffd_stl.py <i> --weights weights.npy [--no-fix]   # row i of a stored (N, 86) array
+    python mv_points.py <seed> [--scale S]   # random weights, std S (default 0.02)
+    python mv_points.py <i> --weights weights.npy [--no-fix]   # row i of a stored (N, 86) array
+
+The random weights are a truncated normal (+-3 std) in units of the box length;
+for a given seed they only scale with S, so the shapes keep their direction.
 """
 import sys
 
@@ -55,12 +58,13 @@ if __name__ == "__main__":
     nz = 5
     i = int(sys.argv[1])
     np.random.seed(i)
+    scale = float(sys.argv[sys.argv.index("--scale") + 1]) if "--scale" in sys.argv else 0.02
 
     mesh = read_surface(STL_IN)
     points = mesh.points
     tris = mesh.cells_dict["triangle"]
 
-    tmp = truncnorm.rvs(a=-3, b=3,scale=0.02,size=(3, nx, ny, nz))
+    tmp = truncnorm.rvs(a=-3, b=3, scale=scale,size=(3, nx, ny, nz))
     mask = np.zeros((3, nx, ny, nz), dtype=bool)
     mask[:] = True
     # Freeze the outer layer of control points on all six faces, so the
@@ -78,7 +82,7 @@ if __name__ == "__main__":
     mask[:, :, :, 0] = False
     tmp[:, :, :, -1] = 0
     mask[:, :, :, -1] = False
-    tmp[0, -1, -1, :] = truncnorm.rvs(a=-3, b=3,scale=0.02,size=(nz,))
+    tmp[0, -1, -1, :] = truncnorm.rvs(a=-3, b=3, scale=scale,size=(nz,))
     mask[0, -1, -1, :] = True
 
     # Optionally replace the random weights with stored ones (row i of an

@@ -39,9 +39,9 @@ echo "sample $id on $(hostname), job ${SLURM_ARRAY_JOB_ID}_${i}, $(date)"
 # the undeformed mesh, made once by mesh_base.slurm (submit.sh makes the
 # array wait for it)
 step="base_mesh"
-BASE_MESH="$RUN_ROOT/base_mesh/DTCHull/constant/polyMesh"
-if [ "$(cat "$RUN_ROOT/base_mesh/STATUS" 2>/dev/null)" != "DONE" ]; then
-    echo "ERROR: no finished base mesh in $RUN_ROOT/base_mesh (submit with submit.sh)" >&2
+BASE_MESH="$BASE_MESH_DIR/DTCHull/constant/polyMesh"
+if [ "$(cat "$BASE_MESH_DIR/STATUS" 2>/dev/null)" != "DONE" ]; then
+    echo "ERROR: no finished base mesh in $BASE_MESH_DIR (submit with submit.sh)" >&2
     false
 fi
 
@@ -55,7 +55,8 @@ cp -r "$BASE_MESH" DTCHull/constant/polyMesh
 step="mv_points"
 load_python
 mv_args=()
-[ -n "$WEIGHTS_FILE" ] && mv_args+=(--weights "$WEIGHTS_FILE")
+if [ -n "$WEIGHTS_FILE" ]; then mv_args+=(--weights "$WEIGHTS_FILE")
+else mv_args+=(--scale "$FFD_SCALE"); fi
 [ "$WEIGHTS_NO_FIX" = "1" ] && mv_args+=(--no-fix)
 "$PY" "$PIPE_HOME/code/mv_points.py" "$i" "${mv_args[@]}" > log.mv_points 2>&1
 step="check_surface"
@@ -78,7 +79,8 @@ step="openfoam_env"
 load_openfoam
 step="openfoam"
 # runs inside a subshell so a failure inside reports the OpenFOAM step itself
-if ! bash "$PIPE_HOME/run_case.sh" solve "$RUN/DTCHull" "$NPROCS" "$END_TIME" "$KEEP_FIELDS" "$WRITE_INTERVAL"; then
+if ! MAX_CO="$MAX_CO" MAX_ALPHA_CO="$MAX_ALPHA_CO" RDT_DAMPING="$RDT_DAMPING" \
+     bash "$PIPE_HOME/run_case.sh" solve "$RUN/DTCHull" "$NPROCS" "$END_TIME" "$KEEP_FIELDS" "$WRITE_INTERVAL"; then
     step="openfoam:$(cat "$RUN/DTCHull/LAST_STEP" 2>/dev/null || echo unknown)"
     false
 fi

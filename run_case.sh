@@ -6,6 +6,7 @@
 #         6 x topoSet/refineMesh, snappyHexMesh, checkMesh.  Run once, on the
 #         undeformed hull, by mesh_base.slurm; every sample morphs a copy.
 #
+#     [MAX_CO=.. MAX_ALPHA_CO=.. RDT_DAMPING=..] \
 #     run_case.sh solve <caseDir> <nProcs> [endTime] [keepFields] [writeInterval]
 #         checkMesh of the morphed mesh (inverted cells are fatal), then
 #         Allrun_bak with 0/ restored from 0.orig first (Allrun_bak alone would
@@ -55,6 +56,14 @@ solve)
         foamDictionary -entry writeInterval -set "$write_interval" system/controlDict > /dev/null
         echo "endTime $end_time, writeInterval $write_interval"
     fi
+
+    # --- LTS controls (empty = keep the case's value) -------------------------
+    step fvSolution
+    for kv in "maxCo=${MAX_CO:-}" "maxAlphaCo=${MAX_ALPHA_CO:-}" "rDeltaTDampingCoeff=${RDT_DAMPING:-}"; do
+        k="${kv%%=*}"; v="${kv#*=}"
+        [ -n "$v" ] && foamDictionary -entry "PIMPLE/$k" -set "$v" system/fvSolution > /dev/null
+        echo "PIMPLE/$k $(foamDictionary -entry "PIMPLE/$k" -value system/fvSolution)"
+    done
 
     # --- morphed mesh: inverted cells are fatal, other failed checks reported --
     step checkMesh

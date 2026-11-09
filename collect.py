@@ -36,7 +36,8 @@ def from_config(name, default):
         return default
     try:
         out = subprocess.run(["bash", "-c", f'source "{cfg}" >/dev/null 2>&1; echo "${name}"'],
-                             capture_output=True, text=True, timeout=10).stdout.strip()
+                             capture_output=True, text=True, timeout=10,
+                             env={**os.environ, "PIPE_HOME": HERE}).stdout.strip()
         return out or default
     except Exception:
         return default

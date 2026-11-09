@@ -20,6 +20,7 @@ $SCRATCH/dtc_ffd_morph/
 | file | role |
 |---|---|
 | `config.sh` | every setting: account, partition, resources, samples, weights, software |
+| `pilot.conf` | overrides for a 4-sample convergence test (`PIPE_CONFIG=pilot.conf`) |
 | `setup.sh` | one-time install: base case, Python venv, smoke test |
 | `submit.sh` | submits the base mesh (once), the sample array and the gather job |
 | `mesh_base.slurm` | meshes the undeformed hull once, in `$RUN_ROOT/base_mesh` |
@@ -95,8 +96,16 @@ use a new `RUN_ROOT`: samples morphed from different base meshes are not compara
   C1 ramp). Without the ramp the map jumps by up to 3 cm across the front and top faces of
   the box, which would fold the volume mesh (and left a small step in the stem above
   z = 0.28 m in the STL). The STL and the volume mesh use the same map
-- random draw: truncated normal, standard deviation 0.02 box lengths, cut at +-3 sigma,
-  seed = sample index
+- random draw: truncated normal, standard deviation `FFD_SCALE` box lengths (0.02), cut at
+  +-3 sigma, seed = sample index; for one seed the shapes only scale with `FFD_SCALE`.
+  Tested on 20 seeds against the base mesh:
+
+  | `FFD_SCALE` | hull displacement (median / max) | morphed mesh |
+  |---|---|---|
+  | 0.02 | 2 / 3.5 mm | same quality as the base mesh |
+  | 0.05 | 6 / 9 mm | same quality as the base mesh |
+  | 0.1 | 11 / 18 mm | 2 of 20 reach 75-85 deg non-orthogonality |
+  | 0.2 | 23 / 36 mm | folded hulls, inverted cells |
 - every weight set is corrected so that the hull keeps its volume (`code/my_ffd.py`)
 - saved order: the (nx, ny, nz, 3) lattice flattened, free entries only (`mask_ffd.npy`)
 
@@ -121,7 +130,11 @@ By hand: `python code/mv_points.py 7 --weights weights.npy [--no-fix]`.
 | `NPROCS` | 8 | must equal `numberOfSubdomains` of the case; checked before solving |
 | `WALLTIME` / `MEM` | 24:00:00 / 32G | per sample; check with `seff <jobid>_0` |
 | `MAX_CONCURRENT` | 20 | samples running at once |
+| `FFD_SCALE` | 0.02 | amplitude of the random weights (table above) |
 | `END_TIME` | 4000 | LTS iterations |
+| `N_AVG` | 500 | last iterations averaged for the drag |
+| `MAX_CO`, `MAX_ALPHA_CO`, `RDT_DAMPING` | empty | `PIMPLE` LTS controls in `fvSolution`; empty = the case's 10, 5, 0.5 |
+| `BASE_MESH_DIR` | `$RUN_ROOT/base_mesh` | another run's base mesh, to reuse it |
 | `WRITE_INTERVAL` | = `END_TIME` | fields written at the end only |
 | `KEEP_FIELDS` | 1 | 0 = keep forces only |
 | `SKIP_FOLDED` | 0 | 1 = do not simulate self-intersecting hulls |
@@ -143,7 +156,28 @@ Only samples with `STATUS = DONE` and at least 500 iterations are included; the 
 listed. `--n-avg`, `--root` and `--out` change the window, the run folder and the output.
 
 The gather job writes a similar set to `$RUN_ROOT/results/`, plus copies of every
-`force.dat` and `summary.csv` with the surface checks.
+`force.dat` and `summary.csv` with the surface checks, the pressure and viscous parts of
+the drag, and how settled each run is: `drag_std` over the window and `drag_drift`, the
+difference between the means of its two halves. If the median drift is more than half the
+spread between samples, the gather log warns that the spread is mostly solver noise.
+
+## Convergence (`pilot.conf`)
+
+With the tutorial's LTS settings (`maxCo 10`, `maxAlphaCo 5`) and 4000 iterations the drag
+still wanders by +-0.3 N with a period of about 1000 iterations after iteration 2000: in the
+first 100-sample run the drift within a run (0.25 N) exceeded the spread between hulls
+(0.20 N), the pressure part was pure noise, and the 86 weights predicted none of the drag
+(leave-one-out Q2 = 0.03). `pilot.conf` reruns 4 samples with gentler settings, 8000
+iterations and `FFD_SCALE` 0.05, reusing the main run's base mesh:
+
+```bash
+PIPE_CONFIG=pilot.conf ./submit.sh
+PIPE_CONFIG=pilot.conf ./status.sh
+```
+
+Check `drag_drift` in `$SCRATCH/dtc_ffd_pilot/results/summary.csv`; once it is well below
+the spread you expect between hulls, copy the settings into `config.sh` and use a new
+`RUN_ROOT` (with `BASE_MESH_DIR` pointing to the existing base mesh).
 
 ## Deformed hulls on a laptop
 

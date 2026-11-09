@@ -39,8 +39,8 @@ mem_opt=(); [ -n "$MEM" ] && mem_opt=(--mem="$MEM")
 
 # the undeformed mesh every sample morphs: made once per RUN_ROOT
 dep=()
-if [ "$(cat "$RUN_ROOT/base_mesh/STATUS" 2>/dev/null)" = "DONE" ]; then
-    echo "base mesh : $RUN_ROOT/base_mesh (done)"
+if [ "$(cat "$BASE_MESH_DIR/STATUS" 2>/dev/null)" = "DONE" ]; then
+    echo "base mesh : $BASE_MESH_DIR (done)"
 else
     mid="$(cat "$RUN_ROOT/logs/base_mesh.jobid" 2>/dev/null || true)"
     if [ -n "$mid" ] && squeue -h -j "$mid" 2>/dev/null | grep -q .; then

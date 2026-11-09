@@ -95,6 +95,8 @@ def main():
     ap.add_argument("--first", type=int, default=0, help="first seed")
     ap.add_argument("--n", type=int, default=100, help="number of seeds")
     ap.add_argument("--force", action="store_true", help="redo seeds already generated")
+    ap.add_argument("--scale", type=float, default=0.02,
+                    help="std of the random FFD weights (FFD_SCALE in config.sh)")
     ap.add_argument("--mesh", help="meshed undeformed case to morph for every seed")
     a = ap.parse_args()
     base_mesh = None
@@ -139,7 +141,7 @@ def main():
                 row["mesh_max_displacement"] = json.load(open(mjs))["max_displacement"]
         else:
             log_path = os.path.join(out, "logs", f"sample_{tag}.log")
-            steps = [["mv_points.py", str(i)], ["check_surface.py", str(i)]]
+            steps = [["mv_points.py", str(i), "--scale", str(a.scale)], ["check_surface.py", str(i)]]
             if base_mesh:
                 make_mesh_case(base_mesh, case)
                 steps.append(["morph_mesh.py", str(i), case])

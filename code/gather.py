@@ -34,6 +34,16 @@ def drag(data, n_avg):
     return abs(data[-n:, 1].mean()), n
 
 
+def convergence(data, n):
+    """pressure and viscous parts of the drag over the last n rows, and how
+    settled the drag is: std over the window and the difference between the
+    means of its two halves (a converged run has drift << sample-to-sample spread)."""
+    x = -data[-n:, 1]
+    h = n // 2
+    return {"drag_pressure": abs(data[-n:, 4].mean()), "drag_viscous": abs(data[-n:, 7].mean()),
+            "drag_std": x.std(), "drag_drift": abs(x[h:].mean() - x[:h].mean())}
+
+
 def main(root, first, n, n_avg):
     runs, res = os.path.join(root, "runs"), os.path.join(root, "results")
     for d in ("forces", "ffd_weights"):
@@ -67,10 +77,12 @@ def main(root, first, n, n_avg):
                 data = load_force(ff)
                 r["drag"], r["n_avg_used"] = drag(data, n_avg)
                 r["n_iterations"] = data.shape[0]
+                r.update(convergence(data, r["n_avg_used"]))
                 W.append(np.load(wf)); Y.append(r["drag"]); idx.append(i)
         rows.append(r)
 
-    cols = ["seed", "status", "drag", "n_iterations", "n_avg_used", "n_inverted",
+    cols = ["seed", "status", "drag", "drag_pressure", "drag_viscous", "drag_std", "drag_drift",
+            "n_iterations", "n_avg_used", "n_inverted",
             "rel_defect", "rel_defect_stl", "max_displacement", "mesh_max_displacement"]
     with open(os.path.join(res, "summary.csv"), "w", newline="") as f:
         wr = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
@@ -93,6 +105,15 @@ def main(root, first, n, n_avg):
     if short:
         print(f"note: {len(short)} samples have fewer than {n_avg} iterations, "
               f"drag averaged over what exists")
+    done = [r for r in rows if "drag_drift" in r]
+    if len(done) > 1:
+        drift = float(np.median([r["drag_drift"] for r in done]))
+        spread = float(np.std([r["drag"] for r in done]))
+        print(f"drag: std between samples {spread:.3f} N; median drift within a run "
+              f"(two halves of the last {n_avg} iterations) {drift:.3f} N")
+        if drift > 0.5 * spread:
+            print("WARNING: the runs have not settled: much of the spread between samples "
+                  "is solver noise (see drag_drift in summary.csv)")
     print(f"results in {res}")
 
 
