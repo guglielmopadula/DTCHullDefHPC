@@ -2,6 +2,9 @@
 # Submit the base mesh (once), the sample array and the gather job that runs after it.
 #     ./submit.sh            all samples from config.sh
 #     ./submit.sh 7,12,40-45 only these indices (finished samples are skipped anyway)
+#     ./submit.sh --continue [indices]
+#                            continue finished samples from their last fields to
+#                            END_TIME (raise END_TIME first); no meshing, no new hulls
 set -eo pipefail
 PIPE_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$PIPE_HOME/config.sh"
@@ -10,7 +13,42 @@ source "$PIPE_HOME/config.sh"
 [ -d "$PIPE_HOME/DTCHull_bak" ] && [ -x "$PIPE_HOME/venv/bin/python" ] \
     || { echo "ERROR: run ./setup.sh first" >&2; exit 1; }
 
+cont=0
+if [ "$1" = "--continue" ]; then cont=1; shift; fi
 range="${1:-$FIRST_SAMPLE-$((FIRST_SAMPLE + N_SAMPLES - 1))}"
+
+mem_opt=(); [ -n "$MEM" ] && mem_opt=(--mem="$MEM")
+
+submit_gather() {   # <array job id>
+    local gid
+    gid=$(sbatch --parsable \
+        --job-name=dtc_ffd_gather \
+        --account="$ACCOUNT" --partition="$GATHER_PARTITION" \
+        --time="$GATHER_WALLTIME" --ntasks=1 \
+        --dependency=afterany:"$1" \
+        --output="$RUN_ROOT/logs/gather.%j.out" \
+        --export=ALL,PIPE_HOME="$PIPE_HOME" \
+        "$PIPE_HOME/gather.slurm")
+    echo "gather    : job $gid, runs after the array finishes"
+}
+
+if [ "$cont" = "1" ]; then
+    [ -d "$RUN_ROOT/runs" ] || { echo "ERROR: no runs in $RUN_ROOT to continue" >&2; exit 1; }
+    [ "$KEEP_FIELDS" = "1" ] || echo "note: KEEP_FIELDS=0, the continued samples cannot be continued again"
+    jid=$(sbatch --parsable \
+        --job-name=dtc_ffd_cont \
+        --account="$ACCOUNT" --partition="$PARTITION" --qos="$QOS" \
+        --time="$WALLTIME" --nodes=1 --ntasks="$NPROCS" --cpus-per-task=1 "${mem_opt[@]}" \
+        --array="${range}%${MAX_CONCURRENT}" \
+        --output="$RUN_ROOT/logs/continue_%a.%A.out" \
+        --export=ALL,PIPE_HOME="$PIPE_HOME" \
+        "$PIPE_HOME/continue_sample.slurm")
+    jid="${jid%%;*}"
+    echo "continue  : array job $jid, indices $range, to iteration $END_TIME"
+    submit_gather "$jid"
+    echo "progress  : ./status.sh"
+    exit 0
+fi
 
 # stored weights: every sample opens the file from its own folder, so the path
 # must be absolute; and the highest index submitted must have a row
@@ -34,8 +72,6 @@ EOF
 fi
 
 mkdir -p "$RUN_ROOT/runs" "$RUN_ROOT/logs"
-
-mem_opt=(); [ -n "$MEM" ] && mem_opt=(--mem="$MEM")
 
 # the undeformed mesh every sample morphs: made once per RUN_ROOT
 dep=()
@@ -70,16 +106,7 @@ jid=$(sbatch --parsable \
     "$PIPE_HOME/run_sample.slurm")
 jid="${jid%%;*}"
 
-gid=$(sbatch --parsable \
-    --job-name=dtc_ffd_gather \
-    --account="$ACCOUNT" --partition="$GATHER_PARTITION" \
-    --time="$GATHER_WALLTIME" --ntasks=1 \
-    --dependency=afterany:"$jid" \
-    --output="$RUN_ROOT/logs/gather.%j.out" \
-    --export=ALL,PIPE_HOME="$PIPE_HOME" \
-    "$PIPE_HOME/gather.slurm")
-
 echo "samples   : array job $jid, indices $range (max $MAX_CONCURRENT at once)"
-echo "gather    : job $gid, runs after the array finishes"
+submit_gather "$jid"
 echo "runs      : $RUN_ROOT/runs/sample_XXX"
 echo "progress  : ./status.sh"

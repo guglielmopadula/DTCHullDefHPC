@@ -16,6 +16,10 @@ for k in "${!count[@]}"; do printf '%-16s %d\n' "$k" "${count[$k]}"; done | sort
 if [ ${#failed[@]} -gt 0 ]; then
     ids="$(printf '%s\n' "${failed[@]}" | cut -d: -f1 | paste -sd, -)"
     [ "$1" = "-v" ] && printf '  failed %s\n' "${failed[@]}"
-    echo "resubmit the failed ones with: ./submit.sh $ids"
+    if printf '%s\n' "${failed[@]}" | grep -q ':continue:'; then
+        echo "resubmit the failed continuations with: ./submit.sh --continue $ids"
+    else
+        echo "resubmit the failed ones with: ./submit.sh $ids"
+    fi
 fi
-squeue -u "$USER" -n dtc_ffd_mesh,dtc_ffd,dtc_ffd_gather -h -o '%.18i %.10T %.10M %R' 2>/dev/null | head -25
+squeue -u "$USER" -n dtc_ffd_mesh,dtc_ffd,dtc_ffd_cont,dtc_ffd_gather -h -o '%.18i %.10T %.10M %R' 2>/dev/null | head -25

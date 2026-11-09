@@ -25,7 +25,8 @@ $SCRATCH/dtc_ffd_morph/
 | `submit.sh` | submits the base mesh (once), the sample array and the gather job |
 | `mesh_base.slurm` | meshes the undeformed hull once, in `$RUN_ROOT/base_mesh` |
 | `run_sample.slurm` | one sample: deform, check, morph the mesh, solve |
-| `run_case.sh` | the OpenFOAM steps: `mesh` (base mesh) and `solve` (one sample) |
+| `continue_sample.slurm` | continues a finished sample from its last fields (`submit.sh --continue`) |
+| `run_case.sh` | the OpenFOAM steps: `mesh` (base mesh), `solve` and `continue` (one sample) |
 | `env.sh` | loads Python and OpenFOAM on the compute nodes |
 | `status.sh` | progress, and the failing step of failed samples |
 | `gather.slurm`, `code/gather.py` | after the array: `results/` with forces, weights and a summary |
@@ -175,9 +176,29 @@ PIPE_CONFIG=pilot.conf ./submit.sh
 PIPE_CONFIG=pilot.conf ./status.sh
 ```
 
+The first pilot (8000 iterations) removed the jitter but had not settled: the transient is
+slower with these settings (level reached near iteration 5500) and the drag still swung by
++-0.3 N. `pilot.conf` now asks for 16000 iterations; continue the finished pilot instead of
+rerunning it:
+
+```bash
+PIPE_CONFIG=pilot.conf ./submit.sh --continue
+```
+
 Check `drag_drift` in `$SCRATCH/dtc_ffd_pilot/results/summary.csv`; once it is well below
 the spread you expect between hulls, copy the settings into `config.sh` and use a new
 `RUN_ROOT` (with `BASE_MESH_DIR` pointing to the existing base mesh).
+
+## Continuing runs (`submit.sh --continue`)
+
+Raise `END_TIME`, then `./submit.sh --continue [indices]`. Each finished sample restarts
+from its last reconstructed fields (so it must have run with `KEEP_FIELDS=1`): no new hull,
+no meshing, the sample folder is kept. `force.dat` becomes the earlier rows up to the
+restart followed by the new ones; the earlier time directory is removed once the new fields
+are written, and the logs of the continuation get the restart time as suffix
+(`log.interFoam.8000`). The current LTS settings apply to the new part. A restart is not
+bit-identical to an uninterrupted run (a short bump in the force right after it), so keep
+the averaging window well after the restart. Samples already at `END_TIME` are skipped.
 
 ## Deformed hulls on a laptop
 
@@ -200,6 +221,7 @@ Writes `stl/DTC-scaled_<i>.stl`, the weights, `checks/surface_check_<i>.json` an
 | `FAILED:morph_mesh` | `runs/sample_XXX/log.morph_mesh` |
 | `FAILED:openfoam:checkMesh` | the morphed mesh has inverted cells: `DTCHull/log.checkMesh`, `mesh_morph.json` |
 | `FAILED:openfoam:<step>` | `runs/sample_XXX/DTCHull/log.<step>` |
+| `FAILED:continue:<step>` | `logs/continue_<i>.*.out`, `DTCHull/log.<step>.<restart time>`; resubmit with `--continue` |
 | sample skipped as `DONE` | an earlier run is in the way: clear `runs/` or set another `RUN_ROOT` |
 
 `$SCRATCH` deletes files not accessed for 40 days: copy what you keep to `$WORK`.

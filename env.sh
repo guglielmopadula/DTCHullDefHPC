@@ -21,8 +21,12 @@ load_python() {
 load_openfoam() {
     module purge
     if [ -n "$FOAM_BASHRC" ]; then
-        # OpenFOAM's bashrc is not safe under 'set -e'
-        set +e; source "$FOAM_BASHRC"; set -e
+        # OpenFOAM's bashrc is not safe under 'set -e', and its failing tests
+        # would fire the job's ERR trap (set -E) and mark the sample FAILED
+        local saved_trap; saved_trap="$(trap -p ERR)"
+        trap - ERR; set +e
+        source "$FOAM_BASHRC"
+        set -e; eval "${saved_trap:-trap - ERR}"
     else
         local m
         for m in $OPENFOAM_MODULES; do
