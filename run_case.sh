@@ -6,14 +6,14 @@
 #         6 x topoSet/refineMesh, snappyHexMesh, checkMesh.  Run once, on the
 #         undeformed hull, by mesh_base.slurm; every sample morphs a copy.
 #
-#     [MAX_CO=.. MAX_ALPHA_CO=.. RDT_DAMPING=..] \
+#     [DECOMP_METHOD=.. MAX_CO=.. MAX_ALPHA_CO=.. RDT_DAMPING=..] \
 #     run_case.sh solve <caseDir> <nProcs> [endTime] [keepFields] [writeInterval]
 #         checkMesh of the morphed mesh (inverted cells are fatal), then
 #         Allrun_bak with 0/ restored from 0.orig first (Allrun_bak alone would
 #         fail: the case ships only 0.orig): setFields, decomposePar,
 #         renumberMesh, the solver, reconstructPar.
 #
-#     [MAX_CO=.. MAX_ALPHA_CO=.. RDT_DAMPING=..] \
+#     [DECOMP_METHOD=.. MAX_CO=.. MAX_ALPHA_CO=.. RDT_DAMPING=..] \
 #     run_case.sh continue <caseDir> <nProcs> <endTime> [keepFields] [writeInterval]
 #         restarts a finished case from its latest reconstructed time (needs
 #         keepFields=1 in the first run): decomposePar -latestTime, renumberMesh,
@@ -28,9 +28,13 @@ cd "$case_dir"
 
 step() { echo "$1" > LAST_STEP; echo "== $1  $(date +%T)"; }
 
-check_decomposition() {    # the case's own decomposeParDict, unchanged
+set_decomposition() {      # <nProcs>; DECOMP_METHOD from the environment
     step decomposeParDict
     local nsub
+    if [ -n "${DECOMP_METHOD:-}" ]; then
+        foamDictionary -entry numberOfSubdomains -set "$1" system/decomposeParDict > /dev/null
+        foamDictionary -entry method -set "$DECOMP_METHOD" system/decomposeParDict > /dev/null
+    fi
     nsub="$(foamDictionary -entry numberOfSubdomains -value system/decomposeParDict)"
     if [ "$nsub" != "$1" ]; then
         echo "ERROR: decomposeParDict has $nsub subdomains but the job has $1 ranks;" \
@@ -80,7 +84,7 @@ mesh)
 solve)
     np="${3:?nProcs}"; end_time="${4:-}"; keep="${5:-1}"; write_interval="${6:-$end_time}"
 
-    check_decomposition "$np"
+    set_decomposition "$np"
     foamDictionary -entry startFrom -set startTime system/controlDict > /dev/null
     [ -n "$end_time" ] && set_run_length "$end_time" "$write_interval"
     set_lts
@@ -125,7 +129,7 @@ continue)
     fi
     echo "restart from time $start to $end_time"
 
-    check_decomposition "$np"
+    set_decomposition "$np"
     foamDictionary -entry startFrom -set latestTime system/controlDict > /dev/null
     set_run_length "$end_time" "$write_interval"
     set_lts

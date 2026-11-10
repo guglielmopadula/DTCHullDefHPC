@@ -58,7 +58,7 @@ else
 fi
 [ -f "$stl" ] || { echo "ERROR: hull STL missing: $stl" >&2; exit 1; }
 nsub="$(sed -n 's/^ *numberOfSubdomains *\([0-9]*\);.*/\1/p' "$base/system/decomposeParDict")"
-[ "$nsub" = "$NPROCS" ] || echo "WARNING: decomposeParDict has $nsub subdomains," \
+[ -n "$DECOMP_METHOD" ] || [ "$nsub" = "$NPROCS" ] || echo "WARNING: decomposeParDict has $nsub subdomains," \
     "config.sh has NPROCS=$NPROCS; set them equal or every sample fails"
 
 # --- Python ------------------------------------------------------------------

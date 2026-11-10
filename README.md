@@ -8,8 +8,8 @@ remeshing, so all samples share one topology and the drag differences are not me
 noise. Each sample is one task of a Slurm job array, in its own folder in `$SCRATCH`.
 
 ```
-$SCRATCH/dtc_ffd_morph/
-  base_mesh/DTCHull/               the undeformed case, meshed once (mesh_base.slurm)
+$SCRATCH/dtc_ffd_conv/
+  (base mesh: $SCRATCH/dtc_ffd_morph/base_mesh/DTCHull, meshed once by mesh_base.slurm)
   runs/sample_000/ … sample_099/   one complete case per sample
   logs/                            Slurm output, sample_<i>.<jobid>.out
   results/                         written by the gather job
@@ -30,7 +30,7 @@ $SCRATCH/dtc_ffd_morph/
 | `env.sh` | loads Python and OpenFOAM on the compute nodes |
 | `status.sh` | progress, and the failing step of failed samples |
 | `gather.slurm`, `code/gather.py` | after the array: `results/` with forces, weights and a summary |
-| `collect.py` | mean x-force over the last 500 iterations + stacked weights, to this folder |
+| `collect.py` | mean x-force over the last `N_AVG` iterations + stacked weights, to this folder |
 | `generate_stls_local.py` | deformed STLs only, on a laptop (no OpenFOAM, no Slurm) |
 | `code/mv_points.py` | draws (or loads) the FFD weights, fixes the volume, writes the STL |
 | `code/my_ffd.py` | Bernstein FFD and the volume-preserving correction |
@@ -82,7 +82,7 @@ use a new `RUN_ROOT`: samples morphed from different base meshes are not compara
    `mesh_morph.json`; the deformed STL is kept for reference, it is not meshed
 5. `run_case.sh solve`: checkMesh (negative volumes or wrong face pyramids fail the sample,
    other failed checks are only reported), then on `NPROCS` ranks restore0Dir, setFields,
-   decomposePar with the case's own `decomposeParDict` (8 subdomains, hierarchical),
+   decomposePar (`DECOMP_METHOD` with `NPROCS` subdomains written into `decomposeParDict`),
    renumberMesh, interFoam for `END_TIME` iterations, reconstructPar
 6. copies `postProcessing/forces/0/force.dat` to the sample folder and writes `STATUS`
    (`DONE`, `FAILED:<step>` or `SKIPPED_FOLDED`)
@@ -128,14 +128,16 @@ By hand: `python code/mv_points.py 7 --weights weights.npy [--no-fix]`.
 | | default | |
 |---|---|---|
 | `PARTITION` | `dcgp_usr_prod` | CPU nodes; `boost_usr_prod` works but leaves the GPUs idle |
-| `NPROCS` | 8 | must equal `numberOfSubdomains` of the case; checked before solving |
-| `WALLTIME` / `MEM` | 24:00:00 / 32G | per sample; check with `seff <jobid>_0` |
+| `NPROCS` | 32 | MPI ranks = subdomains per sample |
+| `DECOMP_METHOD` | `scotch` | written into `decomposeParDict`; empty = the case's own (hierarchical, 8 subdomains, so `NPROCS` 8) |
+| `WALLTIME` / `MEM` | 24:00:00 / 32G | per job; check with `seff <jobid>_0`, and split long runs with `--continue` |
 | `MAX_CONCURRENT` | 20 | samples running at once |
-| `FFD_SCALE` | 0.02 | amplitude of the random weights (table above) |
-| `END_TIME` | 4000 | LTS iterations |
-| `N_AVG` | 500 | last iterations averaged for the drag |
-| `MAX_CO`, `MAX_ALPHA_CO`, `RDT_DAMPING` | empty | `PIMPLE` LTS controls in `fvSolution`; empty = the case's 10, 5, 0.5 |
-| `BASE_MESH_DIR` | `$RUN_ROOT/base_mesh` | another run's base mesh, to reuse it |
+| `FFD_SCALE` | 0.05 | amplitude of the random weights (table above) |
+| `END_TIME` | 16000 | LTS iterations; the pilot settled near 13000-14000 |
+| `N_AVG` | 2000 | last iterations averaged for the drag |
+| `MAX_CO`, `MAX_ALPHA_CO`, `RDT_DAMPING` | 3, 1, 0.2 | `PIMPLE` LTS controls in `fvSolution`; empty = the case's 10, 5, 0.5 |
+| `RUN_ROOT` | `$SCRATCH/dtc_ffd_conv` | |
+| `BASE_MESH_DIR` | `$SCRATCH/dtc_ffd_morph/base_mesh` | empty = `$RUN_ROOT/base_mesh` |
 | `WRITE_INTERVAL` | = `END_TIME` | fields written at the end only |
 | `KEEP_FIELDS` | 1 | 0 = keep forces only |
 | `SKIP_FOLDED` | 0 | 1 = do not simulate self-intersecting hulls |
@@ -147,13 +149,13 @@ By hand: `python code/mv_points.py 7 --weights weights.npy [--no-fix]`.
 
 | file | |
 |---|---|
-| `force_x.npy` | mean `total_x` over the last 500 iterations, signed |
+| `force_x.npy` | mean `total_x` over the last `N_AVG` iterations, signed |
 | `Y.npy` | its absolute value, the drag |
 | `weights.npy` | FFD weights, same row order, (n, 86) |
 | `indices.npy` | sample index of each row |
 | `collect.csv` | sample, force, iterations in `force.dat` |
 
-Only samples with `STATUS = DONE` and at least 500 iterations are included; the others are
+Only samples with `STATUS = DONE` and at least `N_AVG` iterations are included; the others are
 listed. `--n-avg`, `--root` and `--out` change the window, the run folder and the output.
 
 The gather job writes a similar set to `$RUN_ROOT/results/`, plus copies of every
@@ -188,6 +190,11 @@ PIPE_CONFIG=pilot.conf ./submit.sh --continue
 Check `drag_drift` in `$SCRATCH/dtc_ffd_pilot/results/summary.csv`; once it is well below
 the spread you expect between hulls, copy the settings into `config.sh` and use a new
 `RUN_ROOT` (with `BASE_MESH_DIR` pointing to the existing base mesh).
+
+Result at 16000 iterations: drift 0.003-0.02 N over 12000-16000, about 0.01 N of wobble
+over the last 1000 iterations, and the 4 hulls in the same order in every window, with
+about 0.05 N between them. The converged drag is about 15.45 N (the first run's 16.9 N was
+not converged). `config.sh` now uses these settings, with `N_AVG` 2000.
 
 ## Continuing runs (`submit.sh --continue`)
 

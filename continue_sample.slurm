@@ -39,7 +39,7 @@ echo "sample $id: continue from iteration $last to $END_TIME on $(hostname)," \
 step="openfoam_env"
 load_openfoam
 step="openfoam"
-if ! MAX_CO="$MAX_CO" MAX_ALPHA_CO="$MAX_ALPHA_CO" RDT_DAMPING="$RDT_DAMPING" \
+if ! DECOMP_METHOD="$DECOMP_METHOD" MAX_CO="$MAX_CO" MAX_ALPHA_CO="$MAX_ALPHA_CO" RDT_DAMPING="$RDT_DAMPING" \
      bash "$PIPE_HOME/run_case.sh" continue "$RUN/DTCHull" "$NPROCS" "$END_TIME" "$KEEP_FIELDS" "$WRITE_INTERVAL"; then
     step="openfoam:$(cat "$RUN/DTCHull/LAST_STEP" 2>/dev/null || echo unknown)"
     false
